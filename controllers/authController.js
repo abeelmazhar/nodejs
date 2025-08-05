@@ -7,7 +7,7 @@ const signup = async (req, res) => {
   const { name, email, password } = req.body;
   const errors = {};
 
-  // if (!name) errors.name = "Name is required";
+  if (!name) errors.name = "Name is required";
   if (!email) errors.email = "Email is required";
   if (email && !/^\S+@\S+\.\S+$/.test(email)) errors.email = "Invalid email";
   if (!password) errors.password = "Password is required";
