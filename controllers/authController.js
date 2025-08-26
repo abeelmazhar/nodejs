@@ -7,12 +7,12 @@ const signup = async (req, res) => {
   const { name, email, password } = req.body;
   const errors = {};
 
-  if (!name) errors.name = "Name is required";
-  if (!email) errors.email = "Email is required";
-  if (email && !/^\S+@\S+\.\S+$/.test(email)) errors.email = "Invalid email";
-  if (!password) errors.password = "Password is required";
-  if (password && password.length < 6)
-    errors.password = "Password must be at least 6 characters";
+  // if (!name) errors.name = "Name is required";
+  // if (!email) errors.email = "Email is required";
+  // if (email && !/^\S+@\S+\.\S+$/.test(email)) errors.email = "Invalid email";
+  // if (!password) errors.password = "Password is required";
+  // if (password && password.length < 6)
+  //   errors.password = "Password must be at least 6 characters";
 
   if (Object.keys(errors).length > 0) {
     return res.status(400).json({ errors });
