@@ -4,6 +4,7 @@ const { signup, login } = require("../controllers/authController");
 const { getAllUsers } = require("../controllers/getAllUsers");
 const { deleteUser } = require("../controllers/deleteUser");
 const { updateUser } = require("../controllers/updateUser");
+
 router.post("/signup", signup);
 router.post("/login", login);
 router.get("/users", getAllUsers);
