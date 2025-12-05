@@ -155,7 +155,134 @@ const signup = async (req, res) => {
   }
 };
 
+/**
+ * User Login
+ * Authenticates a user with email and password
+ *
+ */
+const login = async (req, res) => {
+  try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection not available",
+        error:
+          "Please wait a moment and try again. The database is connecting.",
+      });
+    }
+
+    // Check if request body exists
+    if (
+      !req.body ||
+      (typeof req.body === "object" && Object.keys(req.body).length === 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is missing",
+        error: "Please send email and password in the request body",
+      });
+    }
+
+    // Extract login credentials from request body
+    const { email, password } = req.body;
+
+    // Validation: Check if all required fields are provided
+    const errors = {};
+
+    // Validate email
+    if (!email) {
+      errors.email = "Email is required";
+    } else {
+      // Email format validation using regex
+      const emailRegex = /^\S+@\S+\.\S+$/;
+      if (!emailRegex.test(email)) {
+        errors.email = "Please provide a valid email address";
+      }
+    }
+
+    // Validate password
+    if (!password) {
+      errors.password = "Password is required";
+    }
+
+    // If there are validation errors, return them
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors,
+      });
+    }
+
+    // Find user by email in database
+    // We need to explicitly select the password field because it's set to select: false in the model
+    const user = await User.findOne({
+      email: email.toLowerCase().trim(),
+    }).select("+password");
+
+    // Check if user exists
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+        error: "Email or password is incorrect",
+      });
+    }
+
+    // Compare the provided password with the hashed password stored in database
+    // bcrypt.compare() securely compares plain text password with hashed password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    // If password doesn't match, return error
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+        error: "Email or password is incorrect",
+      });
+    }
+
+    // If everything is correct, return success response with user data
+    // Note: We don't return the password in the response
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (error) {
+    // Handle different types of errors
+
+    // MongoDB validation errors
+    if (error.name === "ValidationError") {
+      const validationErrors = {};
+      // Extract validation errors from Mongoose
+      Object.keys(error.errors).forEach((key) => {
+        validationErrors[key] = error.errors[key].message;
+      });
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: validationErrors,
+      });
+    }
+
+    // Generic server error
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
 // Export the controller functions
 module.exports = {
   signup,
+  login,
 };
