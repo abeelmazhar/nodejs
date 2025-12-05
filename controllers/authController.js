@@ -6,6 +6,7 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
+const path = require("path");
 
 /**
  * User Signup
@@ -247,6 +248,14 @@ const login = async (req, res) => {
       });
     }
 
+    // Get base URL for image
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const imageUrl = user.image
+      ? user.image.startsWith("http")
+        ? user.image
+        : `${baseUrl}/uploads/${path.basename(user.image)}`
+      : null;
+
     // If everything is correct, return success response with all user data
     // Note: We don't return the password in the response
     // Return null for fields that don't exist
@@ -261,7 +270,7 @@ const login = async (req, res) => {
         city: user.city || null,
         school: user.school || null,
         class: user.class || null,
-        image: user.image || null,
+        image: imageUrl, // Return full URL
         createdAt: user.createdAt,
       },
     });

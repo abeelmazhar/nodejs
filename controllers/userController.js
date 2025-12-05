@@ -5,6 +5,7 @@
 
 const User = require("../models/User");
 const mongoose = require("mongoose");
+const path = require("path");
 
 /**
  * Save User Information
@@ -49,9 +50,10 @@ const saveInformation = async (req, res) => {
       // Find the file with fieldname 'image'
       const imageFile = req.files.find((file) => file.fieldname === "image");
       if (imageFile) {
-        // Use the filename or path of the uploaded file
-        // In production, you would save this file and use the saved path
-        image = imageFile.originalname || imageFile.filename || imageFile.path;
+        // Get base URL from request (protocol + host)
+        const baseUrl = `${req.protocol}://${req.get("host")}`;
+        // Construct full URL for the uploaded image
+        image = `${baseUrl}/uploads/${imageFile.filename}`;
       }
     }
 
@@ -184,6 +186,14 @@ const saveInformation = async (req, res) => {
       }
     );
 
+    // Get base URL for image
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const imageUrl = updatedUser.image
+      ? updatedUser.image.startsWith("http")
+        ? updatedUser.image
+        : `${baseUrl}/uploads/${path.basename(updatedUser.image)}`
+      : null;
+
     // Return updated user data
     return res.status(200).json({
       success: true,
@@ -196,7 +206,7 @@ const saveInformation = async (req, res) => {
         city: updatedUser.city || null,
         school: updatedUser.school || null,
         class: updatedUser.class || null,
-        image: updatedUser.image || null,
+        image: imageUrl, // Return full URL
         createdAt: updatedUser.createdAt,
         updatedAt: updatedUser.updatedAt,
       },
@@ -288,6 +298,14 @@ const getMyAccount = async (req, res) => {
       });
     }
 
+    // Get base URL for image
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const imageUrl = user.image
+      ? user.image.startsWith("http")
+        ? user.image
+        : `${baseUrl}/uploads/${path.basename(user.image)}`
+      : null;
+
     // Return user account data
     // Return null for fields that don't exist
     return res.status(200).json({
@@ -301,7 +319,7 @@ const getMyAccount = async (req, res) => {
         city: user.city || null,
         school: user.school || null,
         class: user.class || null,
-        image: user.image || null,
+        image: imageUrl, // Return full URL
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },
@@ -372,8 +390,10 @@ const updateMyAccount = async (req, res) => {
       // Find the file with fieldname 'image'
       const imageFile = req.files.find((file) => file.fieldname === "image");
       if (imageFile) {
-        // Use the filename or path of the uploaded file
-        image = imageFile.originalname || imageFile.filename || imageFile.path;
+        // Get base URL from request (protocol + host)
+        const baseUrl = `${req.protocol}://${req.get("host")}`;
+        // Construct full URL for the uploaded image
+        image = `${baseUrl}/uploads/${imageFile.filename}`;
       }
     }
 
@@ -472,6 +492,14 @@ const updateMyAccount = async (req, res) => {
       }
     );
 
+    // Get base URL for image
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const imageUrl = updatedUser.image
+      ? updatedUser.image.startsWith("http")
+        ? updatedUser.image
+        : `${baseUrl}/uploads/${path.basename(updatedUser.image)}`
+      : null;
+
     // Return updated user data
     // Return null for fields that don't exist
     return res.status(200).json({
@@ -485,7 +513,7 @@ const updateMyAccount = async (req, res) => {
         city: updatedUser.city || null,
         school: updatedUser.school || null,
         class: updatedUser.class || null,
-        image: updatedUser.image || null,
+        image: imageUrl, // Return full URL
         createdAt: updatedUser.createdAt,
         updatedAt: updatedUser.updatedAt,
       },

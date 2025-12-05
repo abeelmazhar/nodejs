@@ -1,6 +1,8 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 const connectDB = require("./config/db");
 const sessionRoutes = require("./routes/sessionRoutes");
 const authRoutes = require("./routes/authRoutes");
@@ -18,13 +20,36 @@ connectDB();
 // Initialize Express application
 const app = express();
 
-// Configure multer for parsing multipart/form-data
-// This handles form-data from Postman's "form-data" tab
-const upload = multer();
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer to save files to disk
+// This saves uploaded images to the uploads folder
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/"); // Save files to uploads directory
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename: timestamp + original filename
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    const name = path.basename(file.originalname, ext);
+    cb(null, name + "-" + uniqueSuffix + ext);
+  },
+});
+
+const upload = multer({ storage: storage });
 
 // Middleware to parse form-data (multipart/form-data)
 // This allows us to access req.body when using form-data in Postman
 app.use(upload.any());
+
+// Serve static files from uploads directory
+// This allows images to be accessed via URL like: http://localhost:5000/uploads/filename.jpg
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Middleware to parse URL-encoded request bodies (application/x-www-form-urlencoded)
 // This handles form data from Postman's "x-www-form-urlencoded" tab

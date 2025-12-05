@@ -5,6 +5,7 @@
 
 const Event = require("../models/Event");
 const mongoose = require("mongoose");
+const path = require("path");
 
 /**
  * Create Event
@@ -47,9 +48,10 @@ const createEvent = async (req, res) => {
       // Find the file with fieldname 'image'
       const imageFile = req.files.find((file) => file.fieldname === "image");
       if (imageFile) {
-        // Use the filename or path of the uploaded file
-        // In production, you would save this file and use the saved path
-        image = imageFile.originalname || imageFile.filename || imageFile.path;
+        // Get base URL from request (protocol + host)
+        const baseUrl = `${req.protocol}://${req.get("host")}`;
+        // Construct full URL for the uploaded image
+        image = `${baseUrl}/uploads/${imageFile.filename}`;
       }
     }
 
@@ -129,6 +131,12 @@ const createEvent = async (req, res) => {
     // Save event to database
     await newEvent.save();
 
+    // Get base URL for image
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const imageUrl = newEvent.image.startsWith("http")
+      ? newEvent.image
+      : `${baseUrl}/uploads/${path.basename(newEvent.image)}`;
+
     // Return success response
     return res.status(201).json({
       success: true,
@@ -139,7 +147,7 @@ const createEvent = async (req, res) => {
         description: newEvent.description,
         eventDate: newEvent.eventDate,
         location: newEvent.location,
-        image: newEvent.image,
+        image: imageUrl, // Return full URL
         createdAt: newEvent.createdAt,
         updatedAt: newEvent.updatedAt,
       },
@@ -190,21 +198,31 @@ const getAllEvents = async (req, res) => {
     // Find all events and sort by creation date (newest first)
     const events = await Event.find().sort({ createdAt: -1 });
 
-    // Return all events
+    // Get base URL for images
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    // Return all events with full image URLs
     return res.status(200).json({
       success: true,
       message: "Events retrieved successfully",
       count: events.length,
-      data: events.map((event) => ({
-        id: event.id,
-        title: event.title,
-        description: event.description,
-        eventDate: event.eventDate,
-        location: event.location,
-        image: event.image,
-        createdAt: event.createdAt,
-        updatedAt: event.updatedAt,
-      })),
+      data: events.map((event) => {
+        // Construct full URL for image
+        const imageUrl = event.image.startsWith("http")
+          ? event.image
+          : `${baseUrl}/uploads/${path.basename(event.image)}`;
+
+        return {
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          eventDate: event.eventDate,
+          location: event.location,
+          image: imageUrl, // Return full URL
+          createdAt: event.createdAt,
+          updatedAt: event.updatedAt,
+        };
+      }),
     });
   } catch (error) {
     // Generic server error
@@ -258,7 +276,13 @@ const getEventById = async (req, res) => {
       });
     }
 
-    // Return event data
+    // Get base URL for image
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const imageUrl = event.image.startsWith("http")
+      ? event.image
+      : `${baseUrl}/uploads/${path.basename(event.image)}`;
+
+    // Return event data with full image URL
     return res.status(200).json({
       success: true,
       message: "Event retrieved successfully",
@@ -268,7 +292,7 @@ const getEventById = async (req, res) => {
         description: event.description,
         eventDate: event.eventDate,
         location: event.location,
-        image: event.image,
+        image: imageUrl, // Return full URL
         createdAt: event.createdAt,
         updatedAt: event.updatedAt,
       },
