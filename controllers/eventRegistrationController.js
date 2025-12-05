@@ -40,8 +40,8 @@ const registerForEvent = async (req, res) => {
       });
     }
 
-    // Extract user ID and event ID from request
-    const { userId, eventId } = req.body;
+    // Extract user ID, event ID, and time slot from request
+    const { userId, eventId, timeSlot } = req.body;
 
     // Validation: Check if all required fields are provided
     const errors = {};
@@ -63,6 +63,53 @@ const registerForEvent = async (req, res) => {
       const eventIdNumber = parseInt(eventId);
       if (isNaN(eventIdNumber) || eventIdNumber <= 0) {
         errors.eventId = "Please provide a valid numeric event ID";
+      }
+    }
+
+    // Validate timeSlot
+    let parsedTimeSlot = null;
+    if (!timeSlot) {
+      errors.timeSlot = "Time slot is required";
+    } else {
+      try {
+        // Parse time slot if it's a JSON string
+        let slot = timeSlot;
+        if (typeof timeSlot === "string") {
+          slot = JSON.parse(timeSlot);
+        }
+
+        // Validate time slot structure
+        if (!slot.start || !slot.end) {
+          errors.timeSlot = "Time slot must have start and end time";
+        } else {
+          // Validate time format (HH:mm)
+          const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+          if (!timeRegex.test(slot.start)) {
+            errors.timeSlot =
+              "Start time must be in HH:mm format (e.g., 15:00)";
+          }
+          if (!timeRegex.test(slot.end)) {
+            errors.timeSlot = "End time must be in HH:mm format (e.g., 16:00)";
+          }
+          // Validate that end time is after start time
+          if (timeRegex.test(slot.start) && timeRegex.test(slot.end)) {
+            const [startHour, startMin] = slot.start.split(":").map(Number);
+            const [endHour, endMin] = slot.end.split(":").map(Number);
+            const startMinutes = startHour * 60 + startMin;
+            const endMinutes = endHour * 60 + endMin;
+            if (endMinutes <= startMinutes) {
+              errors.timeSlot = "End time must be after start time";
+            } else {
+              parsedTimeSlot = {
+                start: slot.start.trim(),
+                end: slot.end.trim(),
+              };
+            }
+          }
+        }
+      } catch (parseError) {
+        errors.timeSlot =
+          "Invalid time slot format. Expected {start: 'HH:mm', end: 'HH:mm'}";
       }
     }
 
