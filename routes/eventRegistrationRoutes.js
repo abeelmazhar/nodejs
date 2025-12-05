@@ -10,6 +10,7 @@ const router = express.Router();
 const {
   registerForEvent,
   getMyEvents,
+  unregisterFromEvent,
 } = require("../controllers/eventRegistrationController");
 
 /**
@@ -19,6 +20,14 @@ const {
  * Returns: Registration data on success
  */
 router.post("/", registerForEvent);
+
+/**
+ * DELETE /event-register/
+ * Route to unregister a user from an event
+ * Requires: userId and eventId in request body
+ * Returns: Success message on successful unregistration
+ */
+router.delete("/", unregisterFromEvent);
 
 /**
  * GET /my-events/

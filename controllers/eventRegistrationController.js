@@ -300,8 +300,143 @@ const getMyEvents = async (req, res) => {
   }
 };
 
+/**
+ * Unregister from Event
+ * Removes a user's registration from an event
+ *
+ * @route   DELETE /event-register/
+ * @access  Public
+ * @returns {Object} Response with success status
+ */
+const unregisterFromEvent = async (req, res) => {
+  try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection not available",
+        error:
+          "Please wait a moment and try again. The database is connecting.",
+      });
+    }
+
+    // Check if request body exists
+    if (
+      !req.body ||
+      (typeof req.body === "object" && Object.keys(req.body).length === 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is missing",
+        error: "Please send userId and eventId in the request body",
+      });
+    }
+
+    // Extract user ID and event ID from request
+    const { userId, eventId } = req.body;
+
+    // Validation: Check if all required fields are provided
+    const errors = {};
+
+    // Validate userId
+    if (!userId) {
+      errors.userId = "User ID is required";
+    } else {
+      const userIdNumber = parseInt(userId);
+      if (isNaN(userIdNumber) || userIdNumber <= 0) {
+        errors.userId = "Please provide a valid numeric user ID";
+      }
+    }
+
+    // Validate eventId
+    if (!eventId) {
+      errors.eventId = "Event ID is required";
+    } else {
+      const eventIdNumber = parseInt(eventId);
+      if (isNaN(eventIdNumber) || eventIdNumber <= 0) {
+        errors.eventId = "Please provide a valid numeric event ID";
+      }
+    }
+
+    // If there are validation errors, return them
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors,
+      });
+    }
+
+    const userIdNumber = parseInt(userId);
+    const eventIdNumber = parseInt(eventId);
+
+    // Check if event exists
+    const event = await Event.findOne({ id: eventIdNumber });
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found",
+        error: "No event found with the provided event ID",
+      });
+    }
+
+    // Check if registration exists
+    const registration = await EventRegistration.findOne({
+      userId: userIdNumber,
+      eventId: eventIdNumber,
+    });
+
+    if (!registration) {
+      return res.status(404).json({
+        success: false,
+        message: "Registration not found",
+        error: "You are not registered for this event",
+      });
+    }
+
+    // Delete the registration
+    await EventRegistration.findOneAndDelete({
+      userId: userIdNumber,
+      eventId: eventIdNumber,
+    });
+
+    // Return success response
+    return res.status(200).json({
+      success: true,
+      message: "Successfully unregistered from event",
+      data: {
+        userId: userIdNumber,
+        eventId: eventIdNumber,
+      },
+    });
+  } catch (error) {
+    // Handle different types of errors
+
+    // MongoDB validation errors
+    if (error.name === "ValidationError") {
+      const validationErrors = {};
+      Object.keys(error.errors).forEach((key) => {
+        validationErrors[key] = error.errors[key].message;
+      });
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: validationErrors,
+      });
+    }
+
+    // Generic server error
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
 // Export the controller functions
 module.exports = {
   registerForEvent,
   getMyEvents,
+  unregisterFromEvent,
 };
