@@ -6,6 +6,8 @@ const sessionRoutes = require("./routes/sessionRoutes");
 const authRoutes = require("./routes/authRoutes");
 const informationRoutes = require("./routes/informationRoutes");
 const userRoutes = require("./routes/userRoutes");
+const eventRoutes = require("./routes/eventRoutes");
+const createEventRoutes = require("./routes/createEventRoutes");
 
 // Load environment variables from .env file
 dotenv.config();
@@ -36,19 +38,27 @@ app.get("/", (req, res) => {
 
 // Session routes
 // All routes defined in sessionRoutes.js will be prefixed with /session
-app.use("/session", sessionRoutes);
+app.use("/session/", sessionRoutes);
 
 // Authentication routes
 // All routes defined in authRoutes.js will be prefixed with /auth
-app.use("/auth", authRoutes);
+app.use("/auth/", authRoutes);
 
 // Save information routes
 // All routes defined in informationRoutes.js will be prefixed with /save-information
-app.use("/save-information", informationRoutes);
+app.use("/save-information/", informationRoutes);
 
 // User account routes
 // All routes defined in userRoutes.js will be prefixed with /my-account
-app.use("/my-account", userRoutes);
+app.use("/my-account/", userRoutes);
+
+// Create event route
+// Route for creating events, prefixed with /create-event
+app.use("/create-event/", createEventRoutes);
+
+// Event routes
+// All routes defined in eventRoutes.js will be prefixed with /events
+app.use("/events/", eventRoutes);
 
 // Start the server
 const PORT = process.env.PORT || 5000;
