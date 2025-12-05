@@ -55,6 +55,29 @@ const eventSchema = new mongoose.Schema(
       required: [true, "Image is required"],
       trim: true,
     },
+
+    // Time slots/intervals for the event (e.g., [{id: 1, start: "15:00", end: "16:00"}, {id: 2, start: "18:00", end: "19:00"}])
+    timeSlots: [
+      {
+        id: {
+          type: Number,
+          required: true,
+          // Sequential ID for each time slot within the event (1, 2, 3, ...)
+        },
+        start: {
+          type: String,
+          required: true,
+          trim: true,
+          // Format: "HH:mm" (24-hour format, e.g., "15:00" for 3 PM)
+        },
+        end: {
+          type: String,
+          required: true,
+          trim: true,
+          // Format: "HH:mm" (24-hour format, e.g., "16:00" for 4 PM)
+        },
+      },
+    ],
   },
   {
     // Automatically add createdAt and updatedAt timestamps

@@ -88,21 +88,23 @@ const registerForEvent = async (req, res) => {
       });
     }
 
-    // Check if user is already registered for this specific event
-    const existingRegistration = await EventRegistration.findOne({
-      userId: userIdNumber,
-      eventId: eventIdNumber,
-    });
+    // Validate that the time slot exists in the event's time slots
+    if (parsedTimeSlot) {
+      const timeSlotExists = event.timeSlots.some(
+        (slot) =>
+          slot.start === parsedTimeSlot.start && slot.end === parsedTimeSlot.end
+      );
 
-    if (existingRegistration) {
-      return res.status(409).json({
-        success: false,
-        message: "Already registered",
-        error: "You are already registered for this event",
-      });
+      if (!timeSlotExists) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid time slot",
+          error:
+            "The specified time slot does not exist for this event. Please choose from available time slots.",
+        });
+      }
     }
 
-    // Check if user is already registered for another event on the same date
     // Get the event date
     const eventDate = new Date(event.eventDate);
     const startOfDay = new Date(eventDate);
@@ -110,33 +112,37 @@ const registerForEvent = async (req, res) => {
     const endOfDay = new Date(eventDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Find if user has any registration on the same date
-    const sameDateRegistration = await EventRegistration.findOne({
+    // Check if user is already registered for the same date AND same time slot
+    // This allows multiple events on the same day, but not the same time slot
+    const sameTimeSlotRegistration = await EventRegistration.findOne({
       userId: userIdNumber,
       eventDate: {
         $gte: startOfDay,
         $lte: endOfDay,
       },
+      "timeSlot.start": parsedTimeSlot.start,
+      "timeSlot.end": parsedTimeSlot.end,
     });
 
-    if (sameDateRegistration) {
+    if (sameTimeSlotRegistration) {
       return res.status(409).json({
         success: false,
-        message: "Already registered for this date",
+        message: "Already registered for this time slot",
         error:
-          "You can only register for one event per date. You are already registered for an event on this date.",
+          "You are already registered for another event at this time slot on this date. You can only register for one event per time slot.",
       });
     }
 
     // Get the next sequential ID
     const nextId = await EventRegistration.getNextId();
 
-    // Create new registration
+    // Create new registration with time slot
     const newRegistration = new EventRegistration({
       id: nextId,
       userId: userIdNumber,
       eventId: eventIdNumber,
       eventDate: eventDate,
+      timeSlot: parsedTimeSlot, // Add time slot
     });
 
     // Save registration to database
@@ -151,6 +157,7 @@ const registerForEvent = async (req, res) => {
         userId: newRegistration.userId,
         eventId: newRegistration.eventId,
         eventDate: newRegistration.eventDate,
+        timeSlot: newRegistration.timeSlot, // Return time slot
         createdAt: newRegistration.createdAt,
       },
     });
@@ -244,47 +251,57 @@ const getMyEvents = async (req, res) => {
       });
     }
 
-    // Get all event IDs from registrations
-    const eventIds = registrations.map((reg) => reg.eventId);
+    // Get all event IDs from registrations (unique)
+    const eventIds = [...new Set(registrations.map((reg) => reg.eventId))];
 
     // Find all events where user is registered
     const events = await Event.find({ id: { $in: eventIds } }).sort({
       eventDate: 1,
     }); // Sort by event date (upcoming first)
 
-    // Create a map of eventId to registration for quick lookup
+    // Create a map of eventId to registrations (array, as user can register for multiple time slots)
     const registrationMap = {};
     registrations.forEach((reg) => {
-      registrationMap[reg.eventId] = reg;
+      if (!registrationMap[reg.eventId]) {
+        registrationMap[reg.eventId] = [];
+      }
+      registrationMap[reg.eventId].push(reg);
     });
 
     // Get base URL for images
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     const path = require("path");
 
-    // Return events with full image URLs, eventId, and userId
+    // Return events with full image URLs, eventId, userId, timeSlots, and registered time slots
     return res.status(200).json({
       success: true,
       message: "Events retrieved successfully",
       count: events.length,
       data: events.map((event) => {
-        // Get registration info for this event
-        const registration = registrationMap[event.id];
+        // Get all registrations for this event
+        const eventRegistrations = registrationMap[event.id] || [];
 
         // Construct full URL for image
         const imageUrl = event.image.startsWith("http")
           ? event.image
           : `${baseUrl}/uploads/${path.basename(event.image)}`;
 
+        // Get all time slots user registered for in this event
+        const registeredTimeSlots = eventRegistrations.map(
+          (reg) => reg.timeSlot
+        );
+
         return {
           id: event.id,
           eventId: event.id, // Add eventId
-          userId: registration ? registration.userId : userIdNumber, // Add userId
+          userId: userIdNumber, // Add userId
           title: event.title,
           description: event.description,
           eventDate: event.eventDate,
           location: event.location,
           image: imageUrl, // Return full URL
+          timeSlots: event.timeSlots || [], // All available time slots
+          registeredTimeSlots: registeredTimeSlots, // Time slots user registered for
           createdAt: event.createdAt,
           updatedAt: event.updatedAt,
         };
@@ -328,12 +345,12 @@ const unregisterFromEvent = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Request body is missing",
-        error: "Please send userId and eventId in the request body",
+        error: "Please send userId, eventId, and timeSlot in the request body",
       });
     }
 
-    // Extract user ID and event ID from request
-    const { userId, eventId } = req.body;
+    // Extract user ID, event ID, and time slot from request
+    const { userId, eventId, timeSlot } = req.body;
 
     // Validation: Check if all required fields are provided
     const errors = {};
@@ -355,6 +372,44 @@ const unregisterFromEvent = async (req, res) => {
       const eventIdNumber = parseInt(eventId);
       if (isNaN(eventIdNumber) || eventIdNumber <= 0) {
         errors.eventId = "Please provide a valid numeric event ID";
+      }
+    }
+
+    // Validate timeSlot
+    let parsedTimeSlot = null;
+    if (!timeSlot) {
+      errors.timeSlot = "Time slot is required";
+    } else {
+      try {
+        // Parse time slot if it's a JSON string
+        let slot = timeSlot;
+        if (typeof timeSlot === "string") {
+          slot = JSON.parse(timeSlot);
+        }
+
+        // Validate time slot structure
+        if (!slot.start || !slot.end) {
+          errors.timeSlot = "Time slot must have start and end time";
+        } else {
+          // Validate time format (HH:mm)
+          const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+          if (!timeRegex.test(slot.start)) {
+            errors.timeSlot =
+              "Start time must be in HH:mm format (e.g., 15:00)";
+          }
+          if (!timeRegex.test(slot.end)) {
+            errors.timeSlot = "End time must be in HH:mm format (e.g., 16:00)";
+          }
+          if (timeRegex.test(slot.start) && timeRegex.test(slot.end)) {
+            parsedTimeSlot = {
+              start: slot.start.trim(),
+              end: slot.end.trim(),
+            };
+          }
+        }
+      } catch (parseError) {
+        errors.timeSlot =
+          "Invalid time slot format. Expected {start: 'HH:mm', end: 'HH:mm'}";
       }
     }
 
@@ -380,24 +435,29 @@ const unregisterFromEvent = async (req, res) => {
       });
     }
 
-    // Check if registration exists
+    // Check if registration exists for this specific time slot
     const registration = await EventRegistration.findOne({
       userId: userIdNumber,
       eventId: eventIdNumber,
+      "timeSlot.start": parsedTimeSlot.start,
+      "timeSlot.end": parsedTimeSlot.end,
     });
 
     if (!registration) {
       return res.status(404).json({
         success: false,
         message: "Registration not found",
-        error: "You are not registered for this event",
+        error:
+          "You are not registered for this event at the specified time slot",
       });
     }
 
-    // Delete the registration
+    // Delete the registration for this specific time slot
     await EventRegistration.findOneAndDelete({
       userId: userIdNumber,
       eventId: eventIdNumber,
+      "timeSlot.start": parsedTimeSlot.start,
+      "timeSlot.end": parsedTimeSlot.end,
     });
 
     // Return success response
@@ -407,6 +467,7 @@ const unregisterFromEvent = async (req, res) => {
       data: {
         userId: userIdNumber,
         eventId: eventIdNumber,
+        timeSlot: parsedTimeSlot,
       },
     });
   } catch (error) {

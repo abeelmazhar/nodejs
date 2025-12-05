@@ -37,7 +37,7 @@ const createEvent = async (req, res) => {
     }
 
     // Extract all required fields from request
-    const { title, description, eventDate, location } = req.body;
+    const { title, description, eventDate, location, timeSlots } = req.body;
 
     // Handle image: can be a file upload (req.files) or a URL/path (req.body.image)
     // When using form-data with file upload, multer puts files in req.files array
@@ -106,6 +106,66 @@ const createEvent = async (req, res) => {
       }
     }
 
+    // Validate and parse time slots
+    let parsedTimeSlots = [];
+    if (!timeSlots) {
+      errors.timeSlots = "Time slots are required";
+    } else {
+      try {
+        // Parse time slots if it's a JSON string
+        let slots = timeSlots;
+        if (typeof timeSlots === "string") {
+          slots = JSON.parse(timeSlots);
+        }
+
+        // Ensure it's an array
+        if (!Array.isArray(slots)) {
+          errors.timeSlots = "Time slots must be an array";
+        } else if (slots.length === 0) {
+          errors.timeSlots = "At least one time slot is required";
+        } else {
+          // Validate each time slot
+          slots.forEach((slot, index) => {
+            if (!slot.start || !slot.end) {
+              errors[`timeSlots[${index}]`] =
+                "Each time slot must have start and end time";
+            } else {
+              // Validate time format (HH:mm)
+              const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+              if (!timeRegex.test(slot.start)) {
+                errors[`timeSlots[${index}].start`] =
+                  "Start time must be in HH:mm format (e.g., 15:00)";
+              }
+              if (!timeRegex.test(slot.end)) {
+                errors[`timeSlots[${index}].end`] =
+                  "End time must be in HH:mm format (e.g., 16:00)";
+              }
+              // Validate that end time is after start time
+              if (timeRegex.test(slot.start) && timeRegex.test(slot.end)) {
+                const [startHour, startMin] = slot.start.split(":").map(Number);
+                const [endHour, endMin] = slot.end.split(":").map(Number);
+                const startMinutes = startHour * 60 + startMin;
+                const endMinutes = endHour * 60 + endMin;
+                if (endMinutes <= startMinutes) {
+                  errors[`timeSlots[${index}]`] =
+                    "End time must be after start time";
+                }
+              }
+            }
+          });
+          // Assign sequential IDs to each time slot (1, 2, 3, ...)
+          parsedTimeSlots = slots.map((slot, index) => ({
+            id: index + 1, // Assign sequential ID starting from 1
+            start: slot.start.trim(),
+            end: slot.end.trim(),
+          }));
+        }
+      } catch (parseError) {
+        errors.timeSlots =
+          "Invalid time slots format. Expected array of {start: 'HH:mm', end: 'HH:mm'}";
+      }
+    }
+
     // If there are validation errors, return them
     if (Object.keys(errors).length > 0) {
       return res.status(400).json({
@@ -126,6 +186,7 @@ const createEvent = async (req, res) => {
       eventDate: new Date(eventDate), // Convert to Date object
       location: location.trim(),
       image: image.trim(),
+      timeSlots: parsedTimeSlots, // Add time slots
     });
 
     // Save event to database
@@ -148,6 +209,7 @@ const createEvent = async (req, res) => {
         eventDate: newEvent.eventDate,
         location: newEvent.location,
         image: imageUrl, // Return full URL
+        timeSlots: newEvent.timeSlots, // Return time slots
         createdAt: newEvent.createdAt,
         updatedAt: newEvent.updatedAt,
       },
@@ -219,6 +281,7 @@ const getAllEvents = async (req, res) => {
           eventDate: event.eventDate,
           location: event.location,
           image: imageUrl, // Return full URL
+          timeSlots: event.timeSlots || [], // Return time slots
           createdAt: event.createdAt,
           updatedAt: event.updatedAt,
         };
@@ -293,8 +356,94 @@ const getEventById = async (req, res) => {
         eventDate: event.eventDate,
         location: event.location,
         image: imageUrl, // Return full URL
+        timeSlots: event.timeSlots || [], // Return time slots
         createdAt: event.createdAt,
         updatedAt: event.updatedAt,
+      },
+    });
+  } catch (error) {
+    // Generic server error
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
+/**
+ * Delete Event
+ * Deletes an event by its ID
+ * Also deletes all registrations associated with this event
+ *
+ * @route   DELETE /events/:id or DELETE /events/?id=1
+ * @access  Public
+ * @returns {Object} Response with success status
+ */
+const deleteEvent = async (req, res) => {
+  try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection not available",
+        error:
+          "Please wait a moment and try again. The database is connecting.",
+      });
+    }
+
+    // Extract event ID from URL parameters or query parameters
+    // Supports both: /events/1 or /events/?id=1
+    const id = req.params.id || req.query.id;
+
+    // Check if ID is provided
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Event ID is required",
+        error:
+          "Please provide event ID in URL path (/events/:id) or query parameter (?id=1)",
+      });
+    }
+
+    // Validate if id is a valid number
+    const eventIdNumber = parseInt(id);
+    if (isNaN(eventIdNumber) || eventIdNumber <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid event ID format",
+        error: "Please provide a valid numeric event ID (1, 2, 3, ...)",
+      });
+    }
+
+    // Find event by sequential ID
+    const event = await Event.findOne({ id: eventIdNumber });
+
+    // Check if event exists
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found",
+        error: "No event found with the provided ID",
+      });
+    }
+
+    // Import EventRegistration model to delete associated registrations
+    const EventRegistration = require("../models/EventRegistration");
+
+    // Delete all registrations associated with this event
+    await EventRegistration.deleteMany({ eventId: eventIdNumber });
+
+    // Delete the event
+    await Event.findOneAndDelete({ id: eventIdNumber });
+
+    // Return success response
+    return res.status(200).json({
+      success: true,
+      message: "Event deleted successfully",
+      data: {
+        id: eventIdNumber,
+        deletedRegistrations: true, // Indicates registrations were also deleted
       },
     });
   } catch (error) {
@@ -312,4 +461,5 @@ module.exports = {
   createEvent,
   getAllEvents,
   getEventById,
+  deleteEvent,
 };

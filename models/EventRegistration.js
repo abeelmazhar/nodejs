@@ -38,6 +38,20 @@ const eventRegistrationSchema = new mongoose.Schema(
       required: [true, "Event date is required"],
       index: true, // Index for faster queries
     },
+
+    // Time slot that user registered for (e.g., "15:00-16:00" or {start: "15:00", end: "16:00"})
+    timeSlot: {
+      start: {
+        type: String,
+        required: [true, "Time slot start is required"],
+        trim: true,
+      },
+      end: {
+        type: String,
+        required: [true, "Time slot end is required"],
+        trim: true,
+      },
+    },
   },
   {
     // Automatically add createdAt and updatedAt timestamps
@@ -45,8 +59,11 @@ const eventRegistrationSchema = new mongoose.Schema(
   }
 );
 
-// Compound index to ensure a user can only register once per event
-eventRegistrationSchema.index({ userId: 1, eventId: 1 }, { unique: true });
+// Compound index to ensure a user can only register once per event and time slot
+eventRegistrationSchema.index(
+  { userId: 1, eventId: 1, "timeSlot.start": 1, "timeSlot.end": 1 },
+  { unique: true }
+);
 
 /**
  * Helper function to get the next sequential ID
