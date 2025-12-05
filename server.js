@@ -4,6 +4,8 @@ const multer = require("multer");
 const connectDB = require("./config/db");
 const sessionRoutes = require("./routes/sessionRoutes");
 const authRoutes = require("./routes/authRoutes");
+const informationRoutes = require("./routes/informationRoutes");
+const userRoutes = require("./routes/userRoutes");
 
 // Load environment variables from .env file
 dotenv.config();
@@ -39,6 +41,14 @@ app.use("/session", sessionRoutes);
 // Authentication routes
 // All routes defined in authRoutes.js will be prefixed with /auth
 app.use("/auth", authRoutes);
+
+// Save information routes
+// All routes defined in informationRoutes.js will be prefixed with /save-information
+app.use("/save-information", informationRoutes);
+
+// User account routes
+// All routes defined in userRoutes.js will be prefixed with /my-account
+app.use("/my-account", userRoutes);
 
 // Start the server
 const PORT = process.env.PORT || 5000;

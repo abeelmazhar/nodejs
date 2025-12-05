@@ -98,8 +98,12 @@ const signup = async (req, res) => {
     // 10 is the salt rounds (higher = more secure but slower)
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create new user document
+    // Get the next sequential ID (1, 2, 3, 4, ...)
+    const nextId = await User.getNextId();
+
+    // Create new user document with sequential ID
     const newUser = new User({
+      id: nextId, // Assign sequential ID
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password: hashedPassword, // Store hashed password, never store plain text
@@ -114,7 +118,7 @@ const signup = async (req, res) => {
       success: true,
       message: "User registered successfully",
       data: {
-        id: newUser._id,
+        id: newUser.id, // Return sequential ID instead of _id
         name: newUser.name,
         email: newUser.email,
         createdAt: newUser.createdAt,
@@ -243,15 +247,21 @@ const login = async (req, res) => {
       });
     }
 
-    // If everything is correct, return success response with user data
+    // If everything is correct, return success response with all user data
     // Note: We don't return the password in the response
+    // Return null for fields that don't exist
     return res.status(200).json({
       success: true,
       message: "Login successful",
       data: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
+        id: user.id, // Return sequential ID instead of _id
+        name: user.name || null,
+        email: user.email || null,
+        phone: user.phone || null,
+        city: user.city || null,
+        school: user.school || null,
+        class: user.class || null,
+        image: user.image || null,
         createdAt: user.createdAt,
       },
     });
