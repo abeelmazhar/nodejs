@@ -1,7 +1,9 @@
 const express = require("express");
 const dotenv = require("dotenv");
+const multer = require("multer");
 const connectDB = require("./config/db");
 const sessionRoutes = require("./routes/sessionRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 // Load environment variables from .env file
 dotenv.config();
@@ -12,12 +14,18 @@ connectDB();
 // Initialize Express application
 const app = express();
 
-// Middleware to parse JSON request bodies
-// This allows us to access req.body in our controllers
-app.use(express.json());
+// Configure multer for parsing multipart/form-data
+// This handles form-data from Postman's "form-data" tab
+const upload = multer();
 
-// Middleware to parse URL-encoded request bodies (form data)
-app.use(express.urlencoded({ extended: true }));
+// Middleware to parse form-data (multipart/form-data)
+// This allows us to access req.body when using form-data in Postman
+app.use(upload.any());
+
+// Middleware to parse URL-encoded request bodies (application/x-www-form-urlencoded)
+// This handles form data from Postman's "x-www-form-urlencoded" tab
+// extended: true allows parsing of rich objects and arrays
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Root route - health check endpoint
 app.get("/", (req, res) => {
@@ -27,6 +35,10 @@ app.get("/", (req, res) => {
 // Session routes
 // All routes defined in sessionRoutes.js will be prefixed with /session
 app.use("/session", sessionRoutes);
+
+// Authentication routes
+// All routes defined in authRoutes.js will be prefixed with /auth
+app.use("/auth", authRoutes);
 
 // Start the server
 const PORT = process.env.PORT || 5000;
