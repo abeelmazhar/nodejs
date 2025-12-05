@@ -10,6 +10,7 @@ const informationRoutes = require("./routes/informationRoutes");
 const userRoutes = require("./routes/userRoutes");
 const eventRoutes = require("./routes/eventRoutes");
 const createEventRoutes = require("./routes/createEventRoutes");
+const eventRegistrationRoutes = require("./routes/eventRegistrationRoutes");
 
 // Load environment variables from .env file
 dotenv.config();
@@ -84,6 +85,14 @@ app.use("/create-event/", createEventRoutes);
 // Event routes
 // All routes defined in eventRoutes.js will be prefixed with /events
 app.use("/events/", eventRoutes);
+
+// Event registration routes
+// All routes defined in eventRegistrationRoutes.js will be prefixed with /event-register
+app.use("/event-register/", eventRegistrationRoutes);
+
+// My events routes
+// Route to get events where user is registered
+app.use("/my-events/", eventRegistrationRoutes);
 
 // Start the server
 const PORT = process.env.PORT || 5000;
