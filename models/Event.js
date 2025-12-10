@@ -12,7 +12,7 @@ const mongoose = require("mongoose");
 const eventSchema = new mongoose.Schema(
   {
     // Sequential event ID (1, 2, 3, 4, ...)
-    id: {
+    eventId: {
       type: Number,
       unique: true, // Ensure no duplicate IDs
       sparse: true, // Allow null values during creation
@@ -56,13 +56,14 @@ const eventSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Time slots/intervals for the event (e.g., [{id: 1, start: "15:00", end: "16:00"}, {id: 2, start: "18:00", end: "19:00"}])
+    // Time slots/intervals for the event (e.g., [{id_event_date: 1, start: "15:00", end: "16:00"}, {id_event_date: 2, start: "18:00", end: "19:00"}])
+    // id_event_date is globally unique across all events (1, 2, 3, 4, 5, 6, ...)
     timeSlots: [
       {
-        id: {
+        id_event_date: {
           type: Number,
           required: true,
-          // Sequential ID for each time slot within the event (1, 2, 3, ...)
+          // Globally unique sequential ID for each time slot across all events (1, 2, 3, 4, 5, 6, ...)
         },
         start: {
           type: String,
@@ -86,24 +87,58 @@ const eventSchema = new mongoose.Schema(
 );
 
 /**
- * Helper function to get the next sequential ID
- * Finds the maximum ID in the database and returns the next number
+ * Helper function to get the next sequential event ID
+ * Finds the maximum eventId in the database and returns the next number
  */
 eventSchema.statics.getNextId = async function () {
   try {
-    // Find the event with the highest ID
-    const lastEvent = await this.findOne().sort({ id: -1 });
+    // Find the event with the highest eventId
+    const lastEvent = await this.findOne().sort({ eventId: -1 });
 
     // If no events exist, start from 1
-    if (!lastEvent || !lastEvent.id) {
+    if (!lastEvent || !lastEvent.eventId) {
       return 1;
     }
 
     // Return the next sequential ID
-    return lastEvent.id + 1;
+    return lastEvent.eventId + 1;
   } catch (error) {
     // If error occurs, start from 1
     console.error("Error getting next event ID:", error);
+    return 1;
+  }
+};
+
+/**
+ * Helper function to get the next global time slot ID (id_event_date)
+ * Finds the maximum id_event_date across all events and returns the next number
+ * This ensures globally unique IDs for time slots (1, 2, 3, 4, 5, 6, ...)
+ */
+eventSchema.statics.getNextTimeSlotId = async function () {
+  try {
+    // Find all events and get the maximum id_event_date from all time slots
+    const events = await this.find({
+      "timeSlots.id_event_date": { $exists: true },
+    });
+
+    let maxId = 0;
+
+    // Loop through all events and find the maximum id_event_date
+    events.forEach((event) => {
+      if (event.timeSlots && event.timeSlots.length > 0) {
+        event.timeSlots.forEach((slot) => {
+          if (slot.id_event_date && slot.id_event_date > maxId) {
+            maxId = slot.id_event_date;
+          }
+        });
+      }
+    });
+
+    // Return the next sequential ID
+    return maxId + 1;
+  } catch (error) {
+    // If error occurs, start from 1
+    console.error("Error getting next time slot ID:", error);
     return 1;
   }
 };

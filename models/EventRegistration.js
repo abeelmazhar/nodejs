@@ -39,18 +39,12 @@ const eventRegistrationSchema = new mongoose.Schema(
       index: true, // Index for faster queries
     },
 
-    // Time slot that user registered for (e.g., "15:00-16:00" or {start: "15:00", end: "16:00"})
-    timeSlot: {
-      start: {
-        type: String,
-        required: [true, "Time slot start is required"],
-        trim: true,
-      },
-      end: {
-        type: String,
-        required: [true, "Time slot end is required"],
-        trim: true,
-      },
+    // Time slot ID (globally unique id_event_date from Event model)
+    // This references the id_event_date from the event's timeSlots array
+    id_event_date: {
+      type: Number,
+      required: [true, "Time slot ID (id_event_date) is required"],
+      index: true, // Index for faster queries
     },
   },
   {
@@ -61,7 +55,7 @@ const eventRegistrationSchema = new mongoose.Schema(
 
 // Compound index to ensure a user can only register once per event and time slot
 eventRegistrationSchema.index(
-  { userId: 1, eventId: 1, "timeSlot.start": 1, "timeSlot.end": 1 },
+  { userId: 1, eventId: 1, id_event_date: 1 },
   { unique: true }
 );
 

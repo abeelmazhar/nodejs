@@ -40,8 +40,8 @@ const registerForEvent = async (req, res) => {
       });
     }
 
-    // Extract user ID, event ID, and time slot from request
-    const { userId, eventId, timeSlot } = req.body;
+    // Extract user ID, event ID, and time slot ID from request
+    const { userId, eventId, id_event_date } = req.body;
 
     // Validation: Check if all required fields are provided
     const errors = {};
@@ -66,50 +66,15 @@ const registerForEvent = async (req, res) => {
       }
     }
 
-    // Validate timeSlot
-    let parsedTimeSlot = null;
-    if (!timeSlot) {
-      errors.timeSlot = "Time slot is required";
+    // Validate id_event_date (time slot ID)
+    let idEventDateNumber = null;
+    if (!id_event_date) {
+      errors.id_event_date = "Time slot ID (id_event_date) is required";
     } else {
-      try {
-        // Parse time slot if it's a JSON string
-        let slot = timeSlot;
-        if (typeof timeSlot === "string") {
-          slot = JSON.parse(timeSlot);
-        }
-
-        // Validate time slot structure
-        if (!slot.start || !slot.end) {
-          errors.timeSlot = "Time slot must have start and end time";
-        } else {
-          // Validate time format (HH:mm)
-          const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-          if (!timeRegex.test(slot.start)) {
-            errors.timeSlot =
-              "Start time must be in HH:mm format (e.g., 15:00)";
-          }
-          if (!timeRegex.test(slot.end)) {
-            errors.timeSlot = "End time must be in HH:mm format (e.g., 16:00)";
-          }
-          // Validate that end time is after start time
-          if (timeRegex.test(slot.start) && timeRegex.test(slot.end)) {
-            const [startHour, startMin] = slot.start.split(":").map(Number);
-            const [endHour, endMin] = slot.end.split(":").map(Number);
-            const startMinutes = startHour * 60 + startMin;
-            const endMinutes = endHour * 60 + endMin;
-            if (endMinutes <= startMinutes) {
-              errors.timeSlot = "End time must be after start time";
-            } else {
-              parsedTimeSlot = {
-                start: slot.start.trim(),
-                end: slot.end.trim(),
-              };
-            }
-          }
-        }
-      } catch (parseError) {
-        errors.timeSlot =
-          "Invalid time slot format. Expected {start: 'HH:mm', end: 'HH:mm'}";
+      idEventDateNumber = parseInt(id_event_date);
+      if (isNaN(idEventDateNumber) || idEventDateNumber <= 0) {
+        errors.id_event_date =
+          "Please provide a valid numeric time slot ID (id_event_date)";
       }
     }
 
@@ -135,19 +100,18 @@ const registerForEvent = async (req, res) => {
       });
     }
 
-    // Validate that the time slot exists in the event's time slots
-    if (parsedTimeSlot) {
+    // Validate that the time slot ID exists in the event's time slots
+    if (idEventDateNumber) {
       const timeSlotExists = event.timeSlots.some(
-        (slot) =>
-          slot.start === parsedTimeSlot.start && slot.end === parsedTimeSlot.end
+        (slot) => slot.id_event_date === idEventDateNumber
       );
 
       if (!timeSlotExists) {
         return res.status(400).json({
           success: false,
-          message: "Invalid time slot",
+          message: "Invalid time slot ID",
           error:
-            "The specified time slot does not exist for this event. Please choose from available time slots.",
+            "The specified time slot ID (id_event_date) does not exist for this event. Please choose from available time slots.",
         });
       }
     }
@@ -159,16 +123,11 @@ const registerForEvent = async (req, res) => {
     const endOfDay = new Date(eventDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Check if user is already registered for the same date AND same time slot
+    // Check if user is already registered for the same time slot ID (id_event_date)
     // This allows multiple events on the same day, but not the same time slot
     const sameTimeSlotRegistration = await EventRegistration.findOne({
       userId: userIdNumber,
-      eventDate: {
-        $gte: startOfDay,
-        $lte: endOfDay,
-      },
-      "timeSlot.start": parsedTimeSlot.start,
-      "timeSlot.end": parsedTimeSlot.end,
+      id_event_date: idEventDateNumber,
     });
 
     if (sameTimeSlotRegistration) {
@@ -176,20 +135,20 @@ const registerForEvent = async (req, res) => {
         success: false,
         message: "Already registered for this time slot",
         error:
-          "You are already registered for another event at this time slot on this date. You can only register for one event per time slot.",
+          "You are already registered for another event at this time slot. You can only register for one event per time slot.",
       });
     }
 
     // Get the next sequential ID
     const nextId = await EventRegistration.getNextId();
 
-    // Create new registration with time slot
+    // Create new registration with time slot ID
     const newRegistration = new EventRegistration({
       id: nextId,
       userId: userIdNumber,
       eventId: eventIdNumber,
       eventDate: eventDate,
-      timeSlot: parsedTimeSlot, // Add time slot
+      id_event_date: idEventDateNumber, // Add time slot ID
     });
 
     // Save registration to database
@@ -204,7 +163,7 @@ const registerForEvent = async (req, res) => {
         userId: newRegistration.userId,
         eventId: newRegistration.eventId,
         eventDate: newRegistration.eventDate,
-        timeSlot: newRegistration.timeSlot, // Return time slot
+        id_event_date: newRegistration.id_event_date, // Return time slot ID
         createdAt: newRegistration.createdAt,
       },
     });
@@ -302,7 +261,7 @@ const getMyEvents = async (req, res) => {
     const eventIds = [...new Set(registrations.map((reg) => reg.eventId))];
 
     // Find all events where user is registered
-    const events = await Event.find({ id: { $in: eventIds } }).sort({
+    const events = await Event.find({ eventId: { $in: eventIds } }).sort({
       eventDate: 1,
     }); // Sort by event date (upcoming first)
 
@@ -333,14 +292,18 @@ const getMyEvents = async (req, res) => {
           ? event.image
           : `${baseUrl}/uploads/${path.basename(event.image)}`;
 
-        // Get all time slots user registered for in this event
-        const registeredTimeSlots = eventRegistrations.map(
-          (reg) => reg.timeSlot
+        // Get all time slot IDs user registered for in this event
+        const registeredTimeSlotIds = eventRegistrations.map(
+          (reg) => reg.id_event_date
+        );
+
+        // Get full time slot details (with start/end times) for registered slots
+        const registeredTimeSlots = event.timeSlots.filter((slot) =>
+          registeredTimeSlotIds.includes(slot.id_event_date)
         );
 
         return {
-          id: event.id,
-          eventId: event.id, // Add eventId
+          eventId: event.eventId, // Add eventId
           userId: userIdNumber, // Add userId
           title: event.title,
           description: event.description,
@@ -392,12 +355,13 @@ const unregisterFromEvent = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Request body is missing",
-        error: "Please send userId, eventId, and timeSlot in the request body",
+        error:
+          "Please send userId, eventId, and id_event_date in the request body",
       });
     }
 
-    // Extract user ID, event ID, and time slot from request
-    const { userId, eventId, timeSlot } = req.body;
+    // Extract user ID, event ID, and time slot ID from request
+    const { userId, eventId, id_event_date } = req.body;
 
     // Validation: Check if all required fields are provided
     const errors = {};
@@ -422,41 +386,15 @@ const unregisterFromEvent = async (req, res) => {
       }
     }
 
-    // Validate timeSlot
-    let parsedTimeSlot = null;
-    if (!timeSlot) {
-      errors.timeSlot = "Time slot is required";
+    // Validate id_event_date (time slot ID)
+    let idEventDateNumber = null;
+    if (!id_event_date) {
+      errors.id_event_date = "Time slot ID (id_event_date) is required";
     } else {
-      try {
-        // Parse time slot if it's a JSON string
-        let slot = timeSlot;
-        if (typeof timeSlot === "string") {
-          slot = JSON.parse(timeSlot);
-        }
-
-        // Validate time slot structure
-        if (!slot.start || !slot.end) {
-          errors.timeSlot = "Time slot must have start and end time";
-        } else {
-          // Validate time format (HH:mm)
-          const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-          if (!timeRegex.test(slot.start)) {
-            errors.timeSlot =
-              "Start time must be in HH:mm format (e.g., 15:00)";
-          }
-          if (!timeRegex.test(slot.end)) {
-            errors.timeSlot = "End time must be in HH:mm format (e.g., 16:00)";
-          }
-          if (timeRegex.test(slot.start) && timeRegex.test(slot.end)) {
-            parsedTimeSlot = {
-              start: slot.start.trim(),
-              end: slot.end.trim(),
-            };
-          }
-        }
-      } catch (parseError) {
-        errors.timeSlot =
-          "Invalid time slot format. Expected {start: 'HH:mm', end: 'HH:mm'}";
+      idEventDateNumber = parseInt(id_event_date);
+      if (isNaN(idEventDateNumber) || idEventDateNumber <= 0) {
+        errors.id_event_date =
+          "Please provide a valid numeric time slot ID (id_event_date)";
       }
     }
 
@@ -473,7 +411,7 @@ const unregisterFromEvent = async (req, res) => {
     const eventIdNumber = parseInt(eventId);
 
     // Check if event exists
-    const event = await Event.findOne({ id: eventIdNumber });
+    const event = await Event.findOne({ eventId: eventIdNumber });
     if (!event) {
       return res.status(404).json({
         success: false,
@@ -482,12 +420,11 @@ const unregisterFromEvent = async (req, res) => {
       });
     }
 
-    // Check if registration exists for this specific time slot
+    // Check if registration exists for this specific time slot ID
     const registration = await EventRegistration.findOne({
       userId: userIdNumber,
       eventId: eventIdNumber,
-      "timeSlot.start": parsedTimeSlot.start,
-      "timeSlot.end": parsedTimeSlot.end,
+      id_event_date: idEventDateNumber,
     });
 
     if (!registration) {
@@ -503,8 +440,7 @@ const unregisterFromEvent = async (req, res) => {
     await EventRegistration.findOneAndDelete({
       userId: userIdNumber,
       eventId: eventIdNumber,
-      "timeSlot.start": parsedTimeSlot.start,
-      "timeSlot.end": parsedTimeSlot.end,
+      id_event_date: idEventDateNumber,
     });
 
     // Return success response
@@ -514,7 +450,7 @@ const unregisterFromEvent = async (req, res) => {
       data: {
         userId: userIdNumber,
         eventId: eventIdNumber,
-        timeSlot: parsedTimeSlot,
+        id_event_date: idEventDateNumber,
       },
     });
   } catch (error) {

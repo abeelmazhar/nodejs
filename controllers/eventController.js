@@ -153,9 +153,13 @@ const createEvent = async (req, res) => {
               }
             }
           });
-          // Assign sequential IDs to each time slot (1, 2, 3, ...)
+          // Assign globally unique sequential IDs to each time slot (1, 2, 3, 4, 5, 6, ...)
+          // Get the current maximum id_event_date across all events
+          let currentMaxId = (await Event.getNextTimeSlotId()) - 1;
+
+          // Assign globally unique IDs starting from the next available ID
           parsedTimeSlots = slots.map((slot, index) => ({
-            id: index + 1, // Assign sequential ID starting from 1
+            id_event_date: currentMaxId + index + 1, // Assign globally unique ID
             start: slot.start.trim(),
             end: slot.end.trim(),
           }));
@@ -180,7 +184,7 @@ const createEvent = async (req, res) => {
 
     // Create new event document with sequential ID
     const newEvent = new Event({
-      id: nextId, // Assign sequential ID
+      eventId: nextId, // Assign sequential ID
       title: title.trim(),
       description: description.trim(),
       eventDate: new Date(eventDate), // Convert to Date object
@@ -203,7 +207,7 @@ const createEvent = async (req, res) => {
       success: true,
       message: "Event created successfully",
       data: {
-        id: newEvent.id, // Return sequential ID
+        eventId: newEvent.eventId, // Return sequential ID
         title: newEvent.title,
         description: newEvent.description,
         eventDate: newEvent.eventDate,
@@ -275,7 +279,7 @@ const getAllEvents = async (req, res) => {
           : `${baseUrl}/uploads/${path.basename(event.image)}`;
 
         return {
-          id: event.id,
+          eventId: event.eventId,
           title: event.title,
           description: event.description,
           eventDate: event.eventDate,
@@ -328,7 +332,7 @@ const getEventById = async (req, res) => {
     }
 
     // Find event by sequential ID
-    const event = await Event.findOne({ id: eventIdNumber });
+    const event = await Event.findOne({ eventId: eventIdNumber });
 
     // Check if event exists
     if (!event) {
@@ -350,7 +354,7 @@ const getEventById = async (req, res) => {
       success: true,
       message: "Event retrieved successfully",
       data: {
-        id: event.id,
+        eventId: event.eventId,
         title: event.title,
         description: event.description,
         eventDate: event.eventDate,
@@ -417,7 +421,7 @@ const deleteEvent = async (req, res) => {
     }
 
     // Find event by sequential ID
-    const event = await Event.findOne({ id: eventIdNumber });
+    const event = await Event.findOne({ eventId: eventIdNumber });
 
     // Check if event exists
     if (!event) {
@@ -435,7 +439,7 @@ const deleteEvent = async (req, res) => {
     await EventRegistration.deleteMany({ eventId: eventIdNumber });
 
     // Delete the event
-    await Event.findOneAndDelete({ id: eventIdNumber });
+    await Event.findOneAndDelete({ eventId: eventIdNumber });
 
     // Return success response
     return res.status(200).json({
