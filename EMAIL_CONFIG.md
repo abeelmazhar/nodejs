@@ -81,7 +81,7 @@ const transporter = nodemailer.createTransport({
 ## OTP Details
 
 - **OTP Length:** 6 digits
-- **OTP Expiration:** 5 minutes
+- **OTP Expiration:** 30 seconds
 - **OTP Format:** Numeric only (e.g., 123456)
 
 ## Testing
@@ -96,7 +96,7 @@ To test the email configuration, you can check the server logs when sending an O
    - Check your email service allows SMTP access
 
 2. **OTP expired:**
-   - OTPs expire after 5 minutes
+   - OTPs expire after 30 seconds
    - Request a new login to get a new OTP
 
 3. **Invalid OTP:**

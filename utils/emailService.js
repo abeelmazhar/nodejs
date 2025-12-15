@@ -12,11 +12,15 @@ const nodemailer = require("nodemailer");
 const createTransporter = () => {
   // Validate environment variables
   if (!process.env.EMAIL_USER) {
-    throw new Error("EMAIL_USER environment variable is not set. Please add it to your .env file.");
+    throw new Error(
+      "EMAIL_USER environment variable is not set. Please add it to your .env file."
+    );
   }
-  
+
   if (!process.env.EMAIL_PASSWORD) {
-    throw new Error("EMAIL_PASSWORD environment variable is not set. Please add it to your .env file.");
+    throw new Error(
+      "EMAIL_PASSWORD environment variable is not set. Please add it to your .env file."
+    );
   }
 
   // For Gmail, you need to use an App Password
@@ -69,7 +73,7 @@ const sendOTPEmail = async (email, otp, userName = "User") => {
             <div style="background-color: #fff; padding: 20px; border-radius: 5px; text-align: center; margin: 20px 0;">
               <h1 style="color: #007bff; font-size: 32px; letter-spacing: 5px; margin: 0;">${otp}</h1>
             </div>
-            <p style="color: #666; font-size: 14px;">This code will expire in 5 minutes.</p>
+            <p style="color: #666; font-size: 14px;">This code will expire in 30 seconds.</p>
             <p style="color: #666; font-size: 14px;">If you didn't request this code, please ignore this email.</p>
             <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
             <p style="color: #999; font-size: 12px; text-align: center;">This is an automated message, please do not reply.</p>
@@ -84,7 +88,7 @@ const sendOTPEmail = async (email, otp, userName = "User") => {
         
         ${otp}
         
-        This code will expire in 5 minutes.
+        This code will expire in 30 seconds.
         
         If you didn't request this code, please ignore this email.
       `,
@@ -97,20 +101,25 @@ const sendOTPEmail = async (email, otp, userName = "User") => {
     };
   } catch (error) {
     console.error("Error sending email:", error);
-    
+
     // Provide more specific error messages
     let errorMessage = "Failed to send email";
-    
-    if (error.message.includes("EMAIL_USER") || error.message.includes("EMAIL_PASSWORD")) {
+
+    if (
+      error.message.includes("EMAIL_USER") ||
+      error.message.includes("EMAIL_PASSWORD")
+    ) {
       errorMessage = error.message;
     } else if (error.code === "EAUTH") {
-      errorMessage = "Email authentication failed. Please check your EMAIL_USER and EMAIL_PASSWORD in .env file. For Gmail, use an App Password, not your regular password.";
+      errorMessage =
+        "Email authentication failed. Please check your EMAIL_USER and EMAIL_PASSWORD in .env file. For Gmail, use an App Password, not your regular password.";
     } else if (error.code === "ECONNECTION" || error.code === "ETIMEDOUT") {
-      errorMessage = "Could not connect to email server. Please check your internet connection and email service settings.";
+      errorMessage =
+        "Could not connect to email server. Please check your internet connection and email service settings.";
     } else if (error.message) {
       errorMessage = `Failed to send email: ${error.message}`;
     }
-    
+
     throw new Error(errorMessage);
   }
 };
@@ -134,4 +143,3 @@ module.exports = {
   sendOTPEmail,
   testEmailConfig,
 };
-

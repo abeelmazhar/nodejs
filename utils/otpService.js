@@ -7,12 +7,11 @@
 // Format: { email: { otp: '123456', expiresAt: Date, userId: 'user_id' } }
 const otpStore = new Map();
 
-// OTP expiration time (5 minutes)
-const OTP_EXPIRATION_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
+// OTP expiration time (30 seconds)
+const OTP_EXPIRATION_TIME = 30 * 1000; // 30 seconds in milliseconds
 
 /**
  * Generate a random 6-digit OTP
- * @returns {string} 6-digit OTP
  */
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -20,9 +19,6 @@ const generateOTP = () => {
 
 /**
  * Store OTP for a user
- * @param {string} email - User's email
- * @param {string} userId - User's ID
- * @returns {string} Generated OTP
  */
 const storeOTP = (email, userId) => {
   const otp = generateOTP();
@@ -42,9 +38,6 @@ const storeOTP = (email, userId) => {
 
 /**
  * Verify OTP for a user
- * @param {string} email - User's email
- * @param {string} otp - OTP to verify
- * @returns {object|null} Returns { userId } if valid, null if invalid
  */
 const verifyOTP = (email, otp) => {
   const emailKey = email.toLowerCase().trim();
@@ -86,8 +79,6 @@ const cleanupExpiredOTPs = () => {
 
 /**
  * Get OTP for a user (for testing/debugging purposes)
- * @param {string} email - User's email
- * @returns {object|null} OTP data or null
  */
 const getOTP = (email) => {
   return otpStore.get(email.toLowerCase().trim()) || null;
@@ -95,7 +86,6 @@ const getOTP = (email) => {
 
 /**
  * Delete OTP for a user
- * @param {string} email - User's email
  */
 const deleteOTP = (email) => {
   otpStore.delete(email.toLowerCase().trim());
@@ -109,4 +99,3 @@ module.exports = {
   deleteOTP,
   cleanupExpiredOTPs,
 };
-
