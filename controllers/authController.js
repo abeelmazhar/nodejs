@@ -7,6 +7,8 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 const path = require("path");
+const otpService = require("../utils/otpService");
+const emailService = require("../utils/emailService");
 
 /**
  * User Signup
@@ -248,6 +250,157 @@ const login = async (req, res) => {
       });
     }
 
+    // Generate and store OTP for the user
+    const otp = otpService.storeOTP(user.email, user.id.toString());
+
+    // Send OTP to user's email
+    try {
+      await emailService.sendOTPEmail(user.email, otp, user.name || "User");
+    } catch (emailError) {
+      // Log the detailed error for debugging
+      console.error("Failed to send OTP email:", emailError);
+
+      // Return detailed error message to help with debugging
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send OTP email",
+        error:
+          emailError.message ||
+          "Please check your email configuration or try again later.",
+        details:
+          process.env.NODE_ENV === "development"
+            ? {
+                hint: "Make sure you have set EMAIL_USER, EMAIL_PASSWORD, and EMAIL_SERVICE in your .env file",
+                emailService: process.env.EMAIL_SERVICE || "gmail",
+                hasEmailUser: !!process.env.EMAIL_USER,
+                hasEmailPassword: !!process.env.EMAIL_PASSWORD,
+              }
+            : undefined,
+      });
+    }
+
+    // Return success response indicating OTP has been sent
+    return res.status(200).json({
+      success: true,
+      message: "OTP sent to your email. Please check your inbox and verify.",
+      data: {
+        email: user.email,
+        message:
+          "An OTP has been sent to your email address. Please verify it to complete login.",
+      },
+    });
+  } catch (error) {
+    // Handle different types of errors
+
+    // MongoDB validation errors
+    if (error.name === "ValidationError") {
+      const validationErrors = {};
+      // Extract validation errors from Mongoose
+      Object.keys(error.errors).forEach((key) => {
+        validationErrors[key] = error.errors[key].message;
+      });
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: validationErrors,
+      });
+    }
+
+    // Generic server error
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
+/**
+ * Verify OTP and Complete Login
+ * Verifies the OTP sent to user's email and completes the login process
+ */
+const verifyOTP = async (req, res) => {
+  try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection not available",
+        error:
+          "Please wait a moment and try again. The database is connecting.",
+      });
+    }
+
+    // Check if request body exists
+    if (
+      !req.body ||
+      (typeof req.body === "object" && Object.keys(req.body).length === 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is missing",
+        error: "Please send email and otp in the request body",
+      });
+    }
+
+    // Extract email and OTP from request body
+    const { email, otp } = req.body;
+
+    // Validation: Check if all required fields are provided
+    const errors = {};
+
+    // Validate email
+    if (!email) {
+      errors.email = "Email is required";
+    } else {
+      // Email format validation using regex
+      const emailRegex = /^\S+@\S+\.\S+$/;
+      if (!emailRegex.test(email)) {
+        errors.email = "Please provide a valid email address";
+      }
+    }
+
+    // Validate OTP
+    if (!otp) {
+      errors.otp = "OTP is required";
+    } else if (otp.length !== 6 || !/^\d+$/.test(otp)) {
+      errors.otp = "OTP must be a 6-digit number";
+    }
+
+    // If there are validation errors, return them
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors,
+      });
+    }
+
+    // Verify OTP
+    const otpResult = otpService.verifyOTP(email, otp);
+
+    // If OTP is invalid or expired
+    if (!otpResult) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired OTP",
+        error:
+          "The OTP you entered is incorrect or has expired. Please try logging in again.",
+      });
+    }
+
+    // OTP is valid, find the user by sequential ID
+    const user = await User.findOne({ id: parseInt(otpResult.userId) });
+
+    // Check if user still exists
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+        error: "User account no longer exists.",
+      });
+    }
+
     // Get base URL for image
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     const imageUrl = user.image
@@ -256,9 +409,7 @@ const login = async (req, res) => {
         : `${baseUrl}/uploads/${path.basename(user.image)}`
       : null;
 
-    // If everything is correct, return success response with all user data
-    // Note: We don't return the password in the response
-    // Return null for fields that don't exist
+    // Login successful - return user data
     return res.status(200).json({
       success: true,
       message: "Login successful",
@@ -304,4 +455,5 @@ const login = async (req, res) => {
 module.exports = {
   signup,
   login,
+  verifyOTP,
 };
