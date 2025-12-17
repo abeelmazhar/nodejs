@@ -15,7 +15,7 @@ const { createEvent } = require("../controllers/eventController");
  * Requires: title, description, eventDate, location, image in request body
  * Returns: Event data with sequential ID on success
  */
-router.post("/", createEvent);
+// router.post("/", createEvent);
 
 // Export the router to be used in server.js
 module.exports = router;
