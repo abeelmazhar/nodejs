@@ -249,6 +249,11 @@ const createEvent = async (req, res) => {
  * Retrieves all events from the database
  *
  */
+/**
+ * Get All Events with Pagination
+ * Retrieves events with pagination support
+ * Supports query parameters: page, limit
+ */
 const getAllEvents = async (req, res) => {
   try {
     // Check if MongoDB is connected
@@ -261,38 +266,95 @@ const getAllEvents = async (req, res) => {
       });
     }
 
-    // Find all events and sort by creation date (newest first)
-    const events = await Event.find().sort({ createdAt: -1 });
+    // Extract and validate pagination parameters from query string
+    const page = parseInt(req.query.page) || 1; // Default to page 1
+    const limit = parseInt(req.query.limit) || 1; // Default to 10 items per page
+    const maxLimit = 100; // Maximum items per page to prevent abuse
+
+    // Validate page number
+    if (page < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        error: "Page number must be greater than 0",
+      });
+    }
+
+    // Validate and limit the limit parameter
+    const validLimit = Math.min(Math.max(1, limit), maxLimit); // Between 1 and maxLimit
+
+    // Calculate skip value (how many documents to skip)
+    const skip = (page - 1) * validLimit;
+
+    // Get total count of events (for pagination metadata)
+    const totalEvents = await Event.countDocuments();
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalEvents / validLimit);
+
+    // Validate page number against total pages
+    if (page > totalPages && totalPages > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid page number",
+        error: `Page ${page} does not exist. Total pages: ${totalPages}`,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          totalItems: totalEvents,
+          itemsPerPage: validLimit,
+        },
+      });
+    }
+
+    // Find events with pagination and sort by creation date (newest first)
+    const events = await Event.find()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(validLimit);
 
     // Get base URL for images
     const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-    // Return all events with full image URLs
+    // Format events with full image URLs
+    const formattedEvents = events.map((event) => {
+      // Construct full URL for image
+      const imageUrl = event.image.startsWith("http")
+        ? event.image
+        : `${baseUrl}/uploads/${path.basename(event.image)}`;
+
+      return {
+        eventId: event.eventId,
+        title: event.title,
+        description: event.description,
+        eventDate: event.eventDate,
+        location: event.location,
+        image: imageUrl, // Return full URL
+        timeSlots: event.timeSlots || [], // Return time slots
+        createdAt: event.createdAt,
+        updatedAt: event.updatedAt,
+      };
+    });
+
+    // Return paginated events with metadata
     return res.status(200).json({
       success: true,
       message: "Events retrieved successfully",
-      count: events.length,
-      data: events.map((event) => {
-        // Construct full URL for image
-        const imageUrl = event.image.startsWith("http")
-          ? event.image
-          : `${baseUrl}/uploads/${path.basename(event.image)}`;
-
-        return {
-          eventId: event.eventId,
-          title: event.title,
-          description: event.description,
-          eventDate: event.eventDate,
-          location: event.location,
-          image: imageUrl, // Return full URL
-          timeSlots: event.timeSlots || [], // Return time slots
-          createdAt: event.createdAt,
-          updatedAt: event.updatedAt,
-        };
-      }),
+      data: {
+        events: formattedEvents,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          totalItems: totalEvents,
+          itemsPerPage: validLimit,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
+      },
     });
   } catch (error) {
     // Generic server error
+    console.error("Error fetching events:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error",

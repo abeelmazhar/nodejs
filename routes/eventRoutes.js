@@ -16,8 +16,12 @@ const {
 
 /**
  * GET /events
- * Route to get all events
- * Returns: Array of all events
+ * Route to get all events with pagination
+ * Query Parameters (optional):
+ *   - page: Page number (default: 1, minimum: 1)
+ *   - limit: Items per page (default: 10, minimum: 1, maximum: 100)
+ * Returns: Paginated events with metadata
+ * Example: GET /events?page=1&limit=10
  */
 router.get("/", getAllEvents);
 
