@@ -262,29 +262,17 @@ const getMyAccount = async (req, res) => {
       });
     }
 
-    // Extract user ID from request
-    // In a real app, this would come from authentication token/middleware
-    // For now, we'll get it from query params
-    const { userId } = req.query;
-
-    // If userId is not provided, return error
-    if (!userId) {
-      return res.status(400).json({
+    // Get user ID from authenticated user (set by authMiddleware)
+    // The authenticate middleware adds req.user with id, email, and name
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
         success: false,
-        message: "User ID is required",
-        error: "Please provide userId in query parameters",
+        message: "Authentication required",
+        error: "Please login to access your account",
       });
     }
 
-    // Validate if userId is a valid number
-    const userIdNumber = parseInt(userId);
-    if (isNaN(userIdNumber) || userIdNumber <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user ID format",
-        error: "Please provide a valid numeric user ID (1, 2, 3, ...)",
-      });
-    }
+    const userIdNumber = req.user.id;
 
     // Find user by sequential ID in database
     const user = await User.findOne({ id: userIdNumber });
@@ -378,8 +366,16 @@ const updateMyAccount = async (req, res) => {
       });
     }
 
-    // Extract user ID and update data from request
-    const { userId } = req.query;
+    // Get user ID from authenticated user (set by authMiddleware)
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+        error: "Please login to update your account",
+      });
+    }
+
+    const userIdNumber = req.user.id;
     const { email, phone, city, name, school, class: userClass } = req.body;
 
     // Handle image: can be a file upload (req.files) or a URL/path (req.body.image)
@@ -395,25 +391,6 @@ const updateMyAccount = async (req, res) => {
         // Construct full URL for the uploaded image
         image = `${baseUrl}/uploads/${imageFile.filename}`;
       }
-    }
-
-    // If userId is not provided, return error
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: "User ID is required",
-        error: "Please provide userId in query parameters",
-      });
-    }
-
-    // Validate if userId is a valid number
-    const userIdNumber = parseInt(userId);
-    if (isNaN(userIdNumber) || userIdNumber <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user ID format",
-        error: "Please provide a valid numeric user ID (1, 2, 3, ...)",
-      });
     }
 
     // Find user by sequential ID

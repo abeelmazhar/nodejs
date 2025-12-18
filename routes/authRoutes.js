@@ -13,6 +13,8 @@ const {
   verifyOTP,
   forgotPassword,
   resetPassword,
+  refreshToken,
+  logout,
 } = require("../controllers/authController");
 
 /**
@@ -54,6 +56,22 @@ router.post("/forgot-password", forgotPassword);
  * Returns: Success message on successful password reset
  */
 router.post("/reset-password", resetPassword);
+
+/**
+ * POST /auth/refresh-token
+ * Route to refresh access token using refresh token
+ * Requires: refreshToken in request body
+ * Returns: New access token
+ */
+router.post("/refresh-token", refreshToken);
+
+/**
+ * POST /auth/logout
+ * Route to logout and blacklist tokens
+ * Requires: refreshToken in request body (optional)
+ * Returns: Success message
+ */
+router.post("/logout", logout);
 
 // Export the router to be used in server.js
 module.exports = router;

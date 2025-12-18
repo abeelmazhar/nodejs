@@ -10,6 +10,7 @@ const path = require("path");
 const otpService = require("../utils/otpService");
 const emailService = require("../utils/emailService");
 const passwordResetService = require("../utils/passwordResetService");
+const jwtService = require("../utils/jwtService");
 
 /**
  * User Signup
@@ -410,20 +411,29 @@ const verifyOTP = async (req, res) => {
         : `${baseUrl}/uploads/${path.basename(user.image)}`
       : null;
 
-    // Login successful - return user data
+    // Generate JWT tokens (access token and refresh token)
+    const tokens = jwtService.generateTokens(user.id.toString(), user.email);
+
+    // Login successful - return user data with tokens
     return res.status(200).json({
       success: true,
       message: "Login successful",
       data: {
-        id: user.id, // Return sequential ID instead of _id
-        name: user.name || null,
-        email: user.email || null,
-        phone: user.phone || null,
-        city: user.city || null,
-        school: user.school || null,
-        class: user.class || null,
-        image: imageUrl, // Return full URL
-        createdAt: user.createdAt,
+        user: {
+          id: user.id, // Return sequential ID instead of _id
+          name: user.name || null,
+          email: user.email || null,
+          phone: user.phone || null,
+          city: user.city || null,
+          school: user.school || null,
+          class: user.class || null,
+          image: imageUrl, // Return full URL
+          createdAt: user.createdAt,
+        },
+        tokens: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        },
       },
     });
   } catch (error) {
@@ -538,7 +548,9 @@ const forgotPassword = async (req, res) => {
       return res.status(500).json({
         success: false,
         message: "Failed to send password reset email",
-        error: emailError.message || "Please check your email configuration or try again later.",
+        error:
+          emailError.message ||
+          "Please check your email configuration or try again later.",
       });
     }
 
@@ -680,7 +692,8 @@ const resetPassword = async (req, res) => {
       message: "Password reset successfully",
       data: {
         email: user.email,
-        message: "Your password has been reset successfully. You can now login with your new password.",
+        message:
+          "Your password has been reset successfully. You can now login with your new password.",
       },
     });
   } catch (error) {
@@ -706,6 +719,146 @@ const resetPassword = async (req, res) => {
   }
 };
 
+/**
+ * Refresh Access Token
+ * Generates a new access token using a valid refresh token
+ */
+const refreshToken = async (req, res) => {
+  try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection not available",
+        error:
+          "Please wait a moment and try again. The database is connecting.",
+      });
+    }
+
+    // Check if request body exists
+    if (
+      !req.body ||
+      (typeof req.body === "object" && Object.keys(req.body).length === 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is missing",
+        error: "Please send refreshToken in the request body",
+      });
+    }
+
+    // Extract refresh token from request body
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: {
+          refreshToken: "Refresh token is required",
+        },
+      });
+    }
+
+    // Verify the refresh token
+    const decoded = jwtService.verifyRefreshToken(refreshToken);
+
+    if (!decoded) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token",
+        error:
+          "The refresh token is invalid or has expired. Please login again.",
+      });
+    }
+
+    // Find user to ensure they still exist
+    const user = await User.findOne({ id: parseInt(decoded.userId) });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+        error: "User account no longer exists.",
+      });
+    }
+
+    // Generate new access token
+    const newAccessToken = jwtService.generateAccessToken(
+      user.id.toString(),
+      user.email
+    );
+
+    // Return new access token
+    return res.status(200).json({
+      success: true,
+      message: "Token refreshed successfully",
+      data: {
+        accessToken: newAccessToken,
+      },
+    });
+  } catch (error) {
+    // Handle different types of errors
+    if (error.name === "ValidationError") {
+      const validationErrors = {};
+      Object.keys(error.errors).forEach((key) => {
+        validationErrors[key] = error.errors[key].message;
+      });
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: validationErrors,
+      });
+    }
+
+    // Generic server error
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
+/**
+ * Logout
+ * Blacklists the refresh token (in production, also blacklist access token)
+ */
+const logout = async (req, res) => {
+  try {
+    const tokenBlacklist = require("../utils/tokenBlacklist");
+
+    // Get refresh token from request body
+    const { refreshToken } = req.body;
+
+    if (refreshToken) {
+      // Blacklist the refresh token
+      tokenBlacklist.blacklistToken(refreshToken);
+    }
+
+    // Also blacklist access token if provided in header
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const accessToken = authHeader.substring(7);
+      tokenBlacklist.blacklistToken(accessToken);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Logged out successfully",
+      data: {
+        message: "You have been logged out successfully.",
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
 // Export the controller functions
 module.exports = {
   signup,
@@ -713,4 +866,6 @@ module.exports = {
   verifyOTP,
   forgotPassword,
   resetPassword,
+  refreshToken,
+  logout,
 };
