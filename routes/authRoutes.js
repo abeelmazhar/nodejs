@@ -7,7 +7,13 @@ const express = require("express");
 const router = express.Router();
 
 // Import authentication controller functions
-const { signup, login, verifyOTP } = require("../controllers/authController");
+const {
+  signup,
+  login,
+  verifyOTP,
+  forgotPassword,
+  resetPassword,
+} = require("../controllers/authController");
 
 /**
  * POST /auth/signup
@@ -32,6 +38,22 @@ router.post("/login", login);
  * Returns: User data (without password) on success
  */
 router.post("/verify-otp", verifyOTP);
+
+/**
+ * POST /auth/forgot-password
+ * Route to request password reset
+ * Requires: email in request body
+ * Returns: Success message (always returns success for security)
+ */
+router.post("/forgot-password", forgotPassword);
+
+/**
+ * POST /auth/reset-password
+ * Route to reset password using token
+ * Requires: email, token, newPassword in request body
+ * Returns: Success message on successful password reset
+ */
+router.post("/reset-password", resetPassword);
 
 // Export the router to be used in server.js
 module.exports = router;

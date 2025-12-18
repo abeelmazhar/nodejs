@@ -9,6 +9,7 @@ const mongoose = require("mongoose");
 const path = require("path");
 const otpService = require("../utils/otpService");
 const emailService = require("../utils/emailService");
+const passwordResetService = require("../utils/passwordResetService");
 
 /**
  * User Signup
@@ -451,9 +452,265 @@ const verifyOTP = async (req, res) => {
   }
 };
 
+/**
+ * Forgot Password
+ * Sends a password reset token to user's email
+ */
+const forgotPassword = async (req, res) => {
+  try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection not available",
+        error:
+          "Please wait a moment and try again. The database is connecting.",
+      });
+    }
+
+    // Check if request body exists
+    if (
+      !req.body ||
+      (typeof req.body === "object" && Object.keys(req.body).length === 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is missing",
+        error: "Please send email in the request body",
+      });
+    }
+
+    // Extract email from request body
+    const { email } = req.body;
+
+    // Validation: Check if email is provided
+    const errors = {};
+
+    if (!email) {
+      errors.email = "Email is required";
+    } else {
+      // Email format validation using regex
+      const emailRegex = /^\S+@\S+\.\S+$/;
+      if (!emailRegex.test(email)) {
+        errors.email = "Please provide a valid email address";
+      }
+    }
+
+    // If there are validation errors, return them
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors,
+      });
+    }
+
+    // Find user by email in database
+    const user = await User.findOne({
+      email: email.toLowerCase().trim(),
+    });
+
+    // For security, don't reveal if email exists or not
+    // Always return success message to prevent email enumeration
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message:
+          "If an account with that email exists, a password reset link has been sent.",
+      });
+    }
+
+    // Generate and store reset token
+    const resetToken = passwordResetService.storeResetToken(
+      user.email,
+      user.id.toString()
+    );
+
+    // Send password reset email
+    try {
+      await emailService.sendPasswordResetEmail(
+        user.email,
+        resetToken,
+        user.name || "User"
+      );
+    } catch (emailError) {
+      console.error("Failed to send password reset email:", emailError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send password reset email",
+        error: emailError.message || "Please check your email configuration or try again later.",
+      });
+    }
+
+    // Return success response (don't reveal if email exists)
+    return res.status(200).json({
+      success: true,
+      message:
+        "If an account with that email exists, a password reset link has been sent.",
+      data: {
+        email: user.email,
+        // In production, don't send token in response
+        // Only include for development/testing
+        ...(process.env.NODE_ENV === "development" && {
+          token: resetToken,
+          note: "Token only shown in development mode",
+        }),
+      },
+    });
+  } catch (error) {
+    // Handle different types of errors
+    if (error.name === "ValidationError") {
+      const validationErrors = {};
+      Object.keys(error.errors).forEach((key) => {
+        validationErrors[key] = error.errors[key].message;
+      });
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: validationErrors,
+      });
+    }
+
+    // Generic server error
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
+/**
+ * Reset Password
+ * Resets user password using the reset token
+ */
+const resetPassword = async (req, res) => {
+  try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection not available",
+        error:
+          "Please wait a moment and try again. The database is connecting.",
+      });
+    }
+
+    // Check if request body exists
+    if (
+      !req.body ||
+      (typeof req.body === "object" && Object.keys(req.body).length === 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is missing",
+        error: "Please send email, token, and newPassword in the request body",
+      });
+    }
+
+    // Extract data from request body
+    const { email, token, newPassword } = req.body;
+
+    // Validation: Check if all required fields are provided
+    const errors = {};
+
+    if (!email) {
+      errors.email = "Email is required";
+    } else {
+      const emailRegex = /^\S+@\S+\.\S+$/;
+      if (!emailRegex.test(email)) {
+        errors.email = "Please provide a valid email address";
+      }
+    }
+
+    if (!token) {
+      errors.token = "Reset token is required";
+    }
+
+    if (!newPassword) {
+      errors.newPassword = "New password is required";
+    } else if (newPassword.length < 4) {
+      errors.newPassword = "Password must be at least 4 characters";
+    }
+
+    // If there are validation errors, return them
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors,
+      });
+    }
+
+    // Verify reset token
+    const tokenResult = passwordResetService.verifyResetToken(email, token);
+
+    // If token is invalid or expired
+    if (!tokenResult) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired reset token",
+        error:
+          "The reset token is invalid or has expired. Please request a new password reset.",
+      });
+    }
+
+    // Find user by ID
+    const user = await User.findOne({ id: parseInt(tokenResult.userId) });
+
+    // Check if user still exists
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+        error: "User account no longer exists.",
+      });
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user's password
+    user.password = hashedPassword;
+    await user.save();
+
+    // Return success response
+    return res.status(200).json({
+      success: true,
+      message: "Password reset successfully",
+      data: {
+        email: user.email,
+        message: "Your password has been reset successfully. You can now login with your new password.",
+      },
+    });
+  } catch (error) {
+    // Handle different types of errors
+    if (error.name === "ValidationError") {
+      const validationErrors = {};
+      Object.keys(error.errors).forEach((key) => {
+        validationErrors[key] = error.errors[key].message;
+      });
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: validationErrors,
+      });
+    }
+
+    // Generic server error
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
 // Export the controller functions
 module.exports = {
   signup,
   login,
   verifyOTP,
+  forgotPassword,
+  resetPassword,
 };
