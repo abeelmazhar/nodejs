@@ -720,15 +720,6 @@ const searchEvents = async (req, res) => {
       message: "Events retrieved successfully",
       data: {
         events: formattedEvents,
-        filters: {
-          // Return applied filters for reference
-          ...(search && { search: search.trim() }),
-          ...(location && { location: location.trim() }),
-          ...(dateFrom && { dateFrom }),
-          ...(dateTo && { dateTo }),
-          sortBy: sortField,
-          sortOrder: order === 1 ? "asc" : "desc",
-        },
         pagination: {
           currentPage: pageNumber,
           totalPages: totalPages,
