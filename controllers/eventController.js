@@ -522,10 +522,239 @@ const deleteEvent = async (req, res) => {
   }
 };
 
+/**
+ * Search and Filter Events
+ * Searches and filters events based on various criteria
+ * Supports: title search, location filter, date range, sorting, and pagination
+ *
+ * Query Parameters:
+ *   - search: Search term for title (case-insensitive partial match)
+ *   - location: Filter by exact location match
+ *   - dateFrom: Filter events from this date onwards (ISO format: YYYY-MM-DD)
+ *   - dateTo: Filter events up to this date (ISO format: YYYY-MM-DD)
+ *   - sortBy: Sort field (eventDate, createdAt, title) - default: createdAt
+ *   - sortOrder: Sort direction (asc, desc) - default: desc
+ *   - page: Page number (default: 1)
+ *   - limit: Items per page (default: 10, max: 100)
+ *
+ * Example: GET /events/search?search=workshop&location=New York&dateFrom=2024-01-01&sortBy=eventDate&sortOrder=asc&page=1&limit=10
+ */
+const searchEvents = async (req, res) => {
+  try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection not available",
+        error:
+          "Please wait a moment and try again. The database is connecting.",
+      });
+    }
+
+    // Extract query parameters from request
+    const {
+      search, // Search term for title
+      location, // Filter by location
+      dateFrom, // Filter events from this date
+      dateTo, // Filter events up to this date
+      sortBy, // Field to sort by (eventDate, createdAt, title)
+      sortOrder, // Sort direction (asc, desc)
+      page, // Page number
+      limit, // Items per page
+    } = req.query;
+
+    // Extract and validate pagination parameters
+    const pageNumber = parseInt(page) || 1;
+    const pageLimit = parseInt(limit) || 10;
+    const maxLimit = 100;
+
+    // Validate page number
+    if (pageNumber < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        error: "Page number must be greater than 0",
+      });
+    }
+
+    // Validate and limit the limit parameter
+    const validLimit = Math.min(Math.max(1, pageLimit), maxLimit);
+
+    // Calculate skip value for pagination
+    const skip = (pageNumber - 1) * validLimit;
+
+    // Build MongoDB query object dynamically based on filters
+    // This is a powerful pattern - building queries conditionally
+    const query = {};
+
+    // Filter 1: Search by title (case-insensitive partial match)
+    // $regex: MongoDB operator for pattern matching
+    // $options: 'i' makes it case-insensitive
+    if (search && search.trim()) {
+      query.title = {
+        $regex: search.trim(), // Pattern to search for
+        $options: "i", // Case-insensitive search
+      };
+    }
+
+    // Filter 2: Filter by exact location match
+    if (location && location.trim()) {
+      query.location = {
+        $regex: new RegExp(`^${location.trim()}$`, "i"), // Exact match, case-insensitive
+      };
+    }
+
+    // Filter 3: Date range filtering
+    // $gte: Greater than or equal to
+    // $lte: Less than or equal to
+    if (dateFrom || dateTo) {
+      query.eventDate = {};
+
+      // Filter events from this date onwards
+      if (dateFrom) {
+        const fromDate = new Date(dateFrom);
+        if (isNaN(fromDate.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            error:
+              "Invalid dateFrom format. Use YYYY-MM-DD format (e.g., 2024-01-01)",
+          });
+        }
+        // Set time to start of day (00:00:00)
+        fromDate.setHours(0, 0, 0, 0);
+        query.eventDate.$gte = fromDate; // Greater than or equal to
+      }
+
+      // Filter events up to this date
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        if (isNaN(toDate.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            error:
+              "Invalid dateTo format. Use YYYY-MM-DD format (e.g., 2024-12-31)",
+          });
+        }
+        // Set time to end of day (23:59:59)
+        toDate.setHours(23, 59, 59, 999);
+        query.eventDate.$lte = toDate; // Less than or equal to
+      }
+    }
+
+    // Validate sortBy parameter
+    const validSortFields = ["eventDate", "createdAt", "title"];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : "createdAt";
+
+    // Validate sortOrder parameter
+    const validSortOrders = ["asc", "desc"];
+    const order = validSortOrders.includes(sortOrder?.toLowerCase())
+      ? sortOrder.toLowerCase() === "asc"
+        ? 1
+        : -1
+      : -1; // Default to descending
+
+    // Build sort object
+    const sortObject = {};
+    sortObject[sortField] = order; // e.g., { createdAt: -1 } or { eventDate: 1 }
+
+    // Get total count of matching events (for pagination metadata)
+    // countDocuments() counts documents matching the query
+    const totalEvents = await Event.countDocuments(query);
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalEvents / validLimit);
+
+    // Validate page number against total pages
+    if (pageNumber > totalPages && totalPages > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid page number",
+        error: `Page ${pageNumber} does not exist. Total pages: ${totalPages}`,
+        pagination: {
+          currentPage: pageNumber,
+          totalPages: totalPages,
+          totalItems: totalEvents,
+          itemsPerPage: validLimit,
+        },
+      });
+    }
+
+    // Find events matching the query with sorting and pagination
+    // find(query): Find documents matching the query
+    // sort(sortObject): Sort the results
+    // skip(skip): Skip documents for pagination
+    // limit(validLimit): Limit the number of results
+    const events = await Event.find(query)
+      .sort(sortObject)
+      .skip(skip)
+      .limit(validLimit);
+
+    // Get base URL for images
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    // Format events with full image URLs
+    const formattedEvents = events.map((event) => {
+      // Construct full URL for image
+      const imageUrl = event.image.startsWith("http")
+        ? event.image
+        : `${baseUrl}/uploads/${path.basename(event.image)}`;
+
+      return {
+        eventId: event.eventId,
+        title: event.title,
+        description: event.description,
+        eventDate: event.eventDate,
+        location: event.location,
+        image: imageUrl,
+        timeSlots: event.timeSlots || [],
+        createdAt: event.createdAt,
+        updatedAt: event.updatedAt,
+      };
+    });
+
+    // Return search results with pagination and filter metadata
+    return res.status(200).json({
+      success: true,
+      message: "Events retrieved successfully",
+      data: {
+        events: formattedEvents,
+        filters: {
+          // Return applied filters for reference
+          ...(search && { search: search.trim() }),
+          ...(location && { location: location.trim() }),
+          ...(dateFrom && { dateFrom }),
+          ...(dateTo && { dateTo }),
+          sortBy: sortField,
+          sortOrder: order === 1 ? "asc" : "desc",
+        },
+        pagination: {
+          currentPage: pageNumber,
+          totalPages: totalPages,
+          totalItems: totalEvents,
+          itemsPerPage: validLimit,
+          hasNextPage: pageNumber < totalPages,
+          hasPreviousPage: pageNumber > 1,
+        },
+      },
+    });
+  } catch (error) {
+    // Generic server error
+    console.error("Error searching events:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
 // Export the controller functions
 module.exports = {
   createEvent,
   getAllEvents,
   getEventById,
   deleteEvent,
+  searchEvents,
 };
